@@ -129,6 +129,7 @@ class Trainer:
         ### Train
         outer_loop, inner_loop = args.outer, args.inner
         data.update_class_dict(transductive=True)
+        best_val, best_test, best_epoch = -1., 0., 0
         for it in tqdm(range(args.epochs+1)):
             ### Model
             model = SGC(nfeat=data.x.shape[1], nhid=args.hidden,
@@ -241,6 +242,12 @@ class Trainer:
                 acc_val_res = np.array(acc_val_res)
                 acc_test_res = np.array(acc_test_res)
 
-                # print(f' Val Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}')
-                # with open(args.log_file, 'a+') as f:
-                #     f.write(f'Epoch {(it + 1):4d}\nVal Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}\n')
+                print(f' Val Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}')
+                with open(args.log_file, 'a+') as f:
+                    f.write(f'Epoch {(it + 1):4d}\nVal Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}\n')
+
+                # ==================== Model Selection (by validation) ====================
+                if acc_val_res.mean() > best_val:
+                    best_val, best_test, best_epoch = acc_val_res.mean(), acc_test_res.mean(), it + 1
+
+        return best_val, best_test, best_epoch

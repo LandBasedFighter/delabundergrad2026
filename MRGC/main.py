@@ -2,13 +2,38 @@ import sys,os; sys.path.append(os.path.abspath('./'))
 import warnings
 warnings.filterwarnings('ignore')
 import os
+import random
+import numpy as np
+import torch
 from dataset import Dataset
 from train import Trainer as TransTrainer
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 def main(args):
     dataset = Dataset(args)
-    trainer = TransTrainer(dataset, args, device=args.device)
-    trainer.train()
+    # Paper (Sec. 4.1): repeat every experiment five times, report mean and std
+    test_res = []
+    for run in range(args.runs):
+        set_seed(args.seed + run)
+        with open(args.log_file, 'a+') as f:
+            f.write(f'--------------------Run {run} (seed {args.seed + run})--------------------\n')
+        trainer = TransTrainer(dataset, args, device=args.device)
+        best_val, best_test, best_epoch = trainer.train()
+        test_res.append(best_test)
+        msg = f'Run {run}: best epoch {best_epoch}, Val {best_val:.4f}, Test {best_test:.4f}'
+        print(msg)
+        with open(args.log_file, 'a+') as f:
+            f.write(msg + '\n')
+    test_res = np.array(test_res) * 100
+    msg = f'Final Test Accuracy over {args.runs} runs: {test_res.mean():.2f} ± {test_res.std():.2f}'
+    print(msg)
+    with open(args.log_file, 'a+') as f:
+        f.write(msg + '\n')
 
 import json
 import argparse
@@ -28,6 +53,8 @@ def get_args():
     parser.add_argument('--transductive', type=int, default=1)
     parser.add_argument('--save', type=int, default=1)
     parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--runs', type=int, default=5)
     parsed_args = parser.parse_args()
     args = EasyDict(vars(parsed_args))
     # ==================== Load ====================
@@ -41,9 +68,10 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    # args.log_file = f'./result/{args.name}-{args.reduction_rate}-{args.log_index}-{args.feature_budget}-{args.structure_budget}-{args.label_budget}.txt'
-    # with open(args.log_file, 'a+') as f:
-    #     f.write(f'====================Ratio {args.reduction_rate}====================\n')
-    #     f.write(f'{str(args)}\n')
+    os.makedirs('./result', exist_ok=True)
+    args.log_file = f'./result/{args.name}-{args.reduction_rate}-{args.log_index}-{args.feature_budget}-{args.structure_budget}-{args.label_budget}.txt'
+    with open(args.log_file, 'a+') as f:
+        f.write(f'====================Ratio {args.reduction_rate}====================\n')
+        f.write(f'{str(args)}\n')
     print(args)
     main(args)

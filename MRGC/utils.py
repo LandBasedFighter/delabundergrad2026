@@ -14,7 +14,10 @@ import numpy as np
 import torch.nn.functional as F
 from sklearn.preprocessing import StandardScaler
 from deeprobust.graph.utils import *
-from torch_geometric.data import NeighborSampler
+try:
+    from torch_geometric.loader import NeighborSampler
+except ImportError:
+    from torch_geometric.data import NeighborSampler
 from torch_geometric.utils import add_remaining_self_loops, to_undirected
 from torch_geometric.datasets import Planetoid
 

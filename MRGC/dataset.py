@@ -3,7 +3,10 @@ import numpy as np
 import torch
 import numpy as np
 # from deeprobust.graph.utils import *
-from torch_geometric.data import NeighborSampler
+try:
+    from torch_geometric.loader import NeighborSampler
+except ImportError:
+    from torch_geometric.data import NeighborSampler
 from torch_geometric.utils import to_dense_adj
 import scipy.sparse as sp
 import deeprobust.graph.utils as utils
@@ -11,11 +14,11 @@ from sklearn.metrics.pairwise import euclidean_distances
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-def edge_index_to_sp(edge_index):
+def edge_index_to_sp(edge_index, num_nodes):
     row = edge_index[0].numpy()
     col = edge_index[1].numpy()
     data = [1] * len(row)
-    adj_matrix = sp.csr_matrix((data, (row, col)), shape=(edge_index.max().item() + 1, edge_index.max().item() + 1))
+    adj_matrix = sp.csr_matrix((data, (row, col)), shape=(num_nodes, num_nodes))
     return adj_matrix
 
 
@@ -39,7 +42,7 @@ class Dataset:
             y = self.load_attacked_dataset('l', args.label_budget)
 
             idx_train, idx_val, idx_test = data['idx_train'].numpy(), data['idx_val'].numpy(), data['idx_test'].numpy()
-            adj = edge_index_to_sp(edge_index)
+            adj = edge_index_to_sp(edge_index, num_nodes=x.shape[0])
 
             nfeat = data['num_features']
             nclass = data['num_classes']
