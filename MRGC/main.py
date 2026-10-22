@@ -30,7 +30,7 @@ def main(args):
         with open(args.log_file, 'a+') as f:
             f.write(msg + '\n')
     test_res = np.array(test_res) * 100
-    msg = f'Final Test Accuracy over {args.runs} runs: {test_res.mean():.2f} ± {test_res.std():.2f}'
+    msg = f'Final Test Accuracy over {args.runs} runs: {test_res.mean():.2f} +/- {test_res.std():.2f}'
     print(msg)
     with open(args.log_file, 'a+') as f:
         f.write(msg + '\n')
