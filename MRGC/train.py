@@ -130,6 +130,7 @@ class Trainer:
         outer_loop, inner_loop = args.outer, args.inner
         data.update_class_dict(transductive=True)
         best_val, best_test, best_epoch = -1., 0., 0
+        nan_skips = 0
         for it in tqdm(range(args.epochs+1)):
             ### Model
             model = SGC(nfeat=data.x.shape[1], nhid=args.hidden,
@@ -211,11 +212,15 @@ class Trainer:
                 loss.backward()
 
                 if it < 50:
-                    if it % 50 < 40: self.optimizer_feat.step()
-                    else: self.optimizer_pge.step()
+                    optimizer = self.optimizer_feat if it % 50 < 40 else self.optimizer_pge
                 else:
-                    if it % 50 < 10: self.optimizer_pge.step()
-                    else: self.optimizer_feat.step()
+                    optimizer = self.optimizer_pge if it % 50 < 10 else self.optimizer_feat
+                # Skip non-finite steps: a single NaN in feat_syn poisons the run and the next SVD fails
+                grads = [p.grad for g in optimizer.param_groups for p in g['params'] if p.grad is not None]
+                if torch.isfinite(loss) and all(torch.isfinite(g).all() for g in grads):
+                    optimizer.step()
+                else:
+                    nan_skips += 1
                 if ol == outer_loop - 1:
                     break
 
@@ -242,9 +247,9 @@ class Trainer:
                 acc_val_res = np.array(acc_val_res)
                 acc_test_res = np.array(acc_test_res)
 
-                print(f' Val Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}')
+                print(f' Val Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}\nNon-finite steps skipped so far: {nan_skips}')
                 with open(args.log_file, 'a+') as f:
-                    f.write(f'Epoch {(it + 1):4d}\nVal Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}\n')
+                    f.write(f'Epoch {(it + 1):4d}\nVal Accuracy Mean {acc_val_res.mean(0).item():.4f}, Std {acc_val_res.std(0).item():.4f}\nTest Accuracy Mean {acc_test_res.mean(0).item():.4f}, Std {acc_test_res.std(0).item():.4f}\nNon-finite steps skipped so far: {nan_skips}\n')
 
                 # ==================== Model Selection (by validation) ====================
                 if acc_val_res.mean() > best_val:
