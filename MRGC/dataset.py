@@ -22,6 +22,64 @@ def edge_index_to_sp(edge_index, num_nodes):
     return adj_matrix
 
 
+CLEAN_ROOT = './data/clean_source'
+
+
+def load_clean_source(name, idx_train):
+    """Clean features, edges and labels from the dataset's public source (downloaded on first use).
+
+    Sizes match the shipped attacked files: Planetoid Cora/CiteSeer/PubMed, CitationFull DBLP
+    (17716 x 1639, 4 classes) and ogbn-arxiv (undirected, features standardised on the train split).
+    """
+    from torch_geometric.utils import to_undirected
+    if name in ['Cora', 'CiteSeer', 'PubMed']:
+        from torch_geometric.datasets import Planetoid
+        g = Planetoid(os.path.abspath(CLEAN_ROOT), name)[0]
+        x = g.x
+    elif name == 'dblp':
+        from torch_geometric.datasets import CitationFull
+        g = CitationFull(os.path.abspath(CLEAN_ROOT), 'DBLP')[0]
+        x = g.x
+    elif name == 'ogbn-arxiv':
+        from ogb.nodeproppred import PygNodePropPredDataset
+        from sklearn.preprocessing import StandardScaler
+        g = PygNodePropPredDataset(name='ogbn-arxiv', root=os.path.abspath(CLEAN_ROOT))[0]
+        feat = g.x.numpy()
+        feat = StandardScaler().fit(feat[idx_train]).transform(feat)
+        x = torch.from_numpy(feat).float()
+    else:
+        raise NotImplementedError(f'No clean source for {name}')
+    edge_index = to_undirected(g.edge_index, num_nodes=g.num_nodes)
+    return {'f': x.float(), 's': edge_index.long(), 'l': g.y.view(-1).long()}
+
+
+def check_alignment(name, attack_type, budget, clean, attacked):
+    """Fail loudly if the rebuilt clean data does not match the attacked copy's node order.
+
+    An attack at budget b should leave at least about (1 - b) of the rows / labels / edges untouched.
+    """
+    if attack_type == 'f':
+        if clean.shape != attacked.shape:
+            raise RuntimeError(f'{name}: clean features {tuple(clean.shape)} vs attacked {tuple(attacked.shape)}')
+        same = ((clean - attacked.float()).abs().max(dim=1).values < 1e-4).float().mean().item()
+        what = 'feature rows identical'
+    elif attack_type == 'l':
+        if clean.shape != attacked.view(-1).shape:
+            raise RuntimeError(f'{name}: clean labels {tuple(clean.shape)} vs attacked {tuple(attacked.shape)}')
+        same = (clean == attacked.view(-1).long()).float().mean().item()
+        what = 'labels identical'
+    else:
+        n = int(max(clean.max(), attacked.max())) + 1
+        key_clean = torch.unique(clean[0] * n + clean[1])
+        key_att = torch.unique(attacked[0].long() * n + attacked[1].long())
+        same = torch.isin(key_clean, key_att).float().mean().item()
+        what = 'clean edges kept'
+    print(f'[clean {attack_type}] {name}: {same:.1%} {what} vs attacked copy (budget {budget})')
+    if same < 1 - budget - 0.1:
+        raise RuntimeError(f'{name}: only {same:.1%} {what}; the clean source does not line up with the '
+                           f'attacked files (different node order or preprocessing). Not running.')
+
+
 def to_tensor(adj):
     if sp.issparse(adj):
         adj = utils.sparse_mx_to_torch_sparse_tensor(adj)
@@ -37,11 +95,11 @@ class Dataset:
         data = self.load_dataset()
         # ==================== Process ====================
         if args.transductive:
-            x = self.load_attacked_dataset('f', args.feature_budget)
-            edge_index = self.load_attacked_dataset('s', args.structure_budget)
-            y = self.load_attacked_dataset('l', args.label_budget)
-
             idx_train, idx_val, idx_test = data['idx_train'].numpy(), data['idx_val'].numpy(), data['idx_test'].numpy()
+            # --feature_attack/--structure_attack/--label_attack 0 swaps in the clean component
+            x = self.load_component('f', args.feature_budget, args.feature_attack, idx_train)
+            edge_index = self.load_component('s', args.structure_budget, args.structure_attack, idx_train)
+            y = self.load_component('l', args.label_budget, args.label_attack, idx_train)
             adj = edge_index_to_sp(edge_index, num_nodes=x.shape[0])
 
             nfeat = data['num_features']
@@ -100,6 +158,21 @@ class Dataset:
         self.class_dict2 = None
 
     
+    def load_component(self, attack_type, budget, attacked, idx_train):
+        attacked_value = self.load_attacked_dataset(attack_type, budget)
+        if attacked:
+            return attacked_value
+        # The shipped data has no clean x/edges/labels (clean.pth only holds splits and sizes),
+        # so rebuild them from the public source and check they line up with the attacked copy
+        clean = self.load_clean_source(idx_train)[attack_type]
+        check_alignment(self.args.name, attack_type, budget, clean, attacked_value)
+        return clean
+
+    def load_clean_source(self, idx_train):
+        if getattr(self, '_clean', None) is None:
+            self._clean = load_clean_source(self.args.name, idx_train)
+        return self._clean
+
     def load_attacked_dataset(self, attack_type, budget):
         if attack_type == 's':
             save = torch.load(f'./data/{self.args.name}/s_{budget}.pth', map_location='cpu')

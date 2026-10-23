@@ -68,8 +68,13 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    os.makedirs('./result', exist_ok=True)
-    args.log_file = f'./result/{args.name}-{args.reduction_rate}-{args.log_index}-{args.feature_budget}-{args.structure_budget}-{args.label_budget}.txt'
+    # Any attack turned off is an ablation: log it under result/ablation/ so collect_results.py
+    # (which compares result/*.txt against the paper's all-attacks table) never mixes it in
+    attacks = f"f{args.feature_attack}s{args.structure_attack}l{args.label_attack}"
+    result_dir = './result' if attacks == 'f1s1l1' else './result/ablation'
+    os.makedirs(result_dir, exist_ok=True)
+    suffix = '' if attacks == 'f1s1l1' else f'-{attacks}'
+    args.log_file = f'{result_dir}/{args.name}-{args.reduction_rate}-{args.log_index}-{args.feature_budget}-{args.structure_budget}-{args.label_budget}{suffix}.txt'
     with open(args.log_file, 'a+') as f:
         f.write(f'====================Ratio {args.reduction_rate}====================\n')
         f.write(f'{str(args)}\n')
