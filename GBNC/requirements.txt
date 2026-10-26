@@ -1,0 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+#pinned to dec 2024 versions
+torch==2.4.1
+torch_geometric==2.5.3
+numpy<2
+networkx
+scipy
+matplotlib
