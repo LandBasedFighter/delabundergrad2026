@@ -70,7 +70,7 @@ def main():
     new_data = gb_division(fun_data, args)
 
     data = data.to(device)
-    args.num_classes = len(set(np.array(data.y)))
+    args.num_classes = len(set(np.array(data.y.cpu())))
     args.gb_labels = new_data['gb_labels']
     features = torch.from_numpy(new_data['gb_features'])
     args.num_features = len(features[0])
